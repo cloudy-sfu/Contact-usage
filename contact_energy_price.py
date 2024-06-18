@@ -2,6 +2,7 @@ import logging
 import sqlite3
 
 import pandas as pd
+from contact_energy_local_db import get_usage
 
 db_path = "contact_energy.db"
 gst_rate = 0.15
@@ -23,38 +24,28 @@ default_unit_price = {
     "bach_price": 44.1,
     "bach_levy": 0.16,
 }
-default_unit_price = pd.DataFrame(
-    list(default_unit_price.items()), columns=['name', 'price'])
+all_plans = ['weekend', 'night', 'broadband', 'charge', 'basic', 'bach']
 
 
-def get_unit_price(row_id):
+def get_unit_price(row_id) -> dict:
+    price_template = pd.DataFrame(
+        data=list(default_unit_price.keys()), columns=['name'])
     c = sqlite3.connect(db_path)
-    price = None
     try:
         price = pd.read_sql_query(
             sql="select name, price from price where meter_id = ?",
             con=c,
             params=[row_id]
         )
+        price = pd.merge(price_template, price, on='name', how='left')
     except pd.errors.DatabaseError:
-        pass
+        price = price_template.copy()
+        price['price'] = pd.NA
     c.close()
-    if (price is None) or price.shape[0] == 0:
-        logging.warning("The unit price for the current account is not configured, so "
-                        "the default values are applied.")
-        price = default_unit_price.copy()
-    # There lacks a high efficient method to judge whether "name" column of price and
-    # default price is the same.
-    # "pd.testing.assert_series_equal" order matters, raise an error instead of returning
-    # True or False.
-    # Comparing "set" is not a "pandas" function.
-    # Therefore, "elif price['name'] and default_price['name'] exactly match" is not
-    # implemented.
-    else:
-        price = pd.merge(default_unit_price, price, on='name', how='left',
-                         suffixes=('_default', ''))
-        price['price'] = price['price'].combine_first(price['price_default'])
-        price = price[['name', 'price']].drop_duplicates(subset='name')  # keep='first'
+    if price['price'].isna().sum() > 0:
+        logging.warning("The unit price for the current account is not configured.")
+    # Because the template is left joined, it's guaranteed there is no missing keys.
+    price = dict(zip(price['name'], price['price']))
     return price
 
 
@@ -74,39 +65,12 @@ def save_unit_price(row_id, **kwargs):
 
 
 def get_total_price(start_date, end_date, row_id):
-    total_price_excl_gst = {
-        "weekend": 0,
-        "night": 0,
-        "broadband": 0,
-        "charge": 0,
-        "basic": 0,
-        "bach": 0,
-    }
-    c = sqlite3.connect(db_path)
-    usage = None
-    try:
-        usage = pd.read_sql_query(
-            sql="select * from usage where date(printf('%04d-%02d-%02d', year, month, "
-                "day)) between date(?) and date(?) and meter_id = ?",
-            con=c,
-            params=[start_date, end_date, row_id]
-        )
-    except pd.errors.DatabaseError:
-        logging.warning(
-            "The table \"usage\" does not exist. Please start getting usage data of "
-            "your first meter, or extend the start and end date."
-        )
-    if (usage is None) or usage.shape[0] == 0:
-        logging.warning(
-            "No usage data for the current meter, or please extend the start and end "
-            "date."
-        )
-        c.close()
-        return total_price_excl_gst
+    usage = get_usage(start_date, end_date, row_id)
+    if usage is None:
+        return {p: 0 for p in all_plans}
     unit_price = get_unit_price(row_id)
-    # Because the template is left joined, it's guaranteed there is no missing keys.
-    unit_price = dict(zip(unit_price['name'], unit_price['price']))
     # calc total price
+    total_price_excl_gst = {}
     total_days = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days + 1
     usage['date'] = pd.to_datetime(usage[['year', 'month', 'day']])
     usage['weekend_is_free'] = ((usage['date'].dt.weekday > 4) & (usage['hour'] >= 9) &
@@ -137,9 +101,4 @@ def get_total_price(start_date, end_date, row_id):
     # add GST, convert cents to dollars
     total_price = {k: round(float(v) * (1 + gst_rate) / 100, 2)
                    for k, v in total_price_excl_gst.items()}
-    logging.info("The program's calculation is slightly different to Contact Energy's "
-                 "bill, because they round both peak (or charged) usage and off-peak "
-                 "(or free) usage to integer kWh. This program's calculation will be "
-                 "more accurate. The difference should be smaller than 1kWh average "
-                 "unit price of your plan (usually smaller than $1).")
     return total_price

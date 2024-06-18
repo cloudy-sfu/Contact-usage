@@ -36,9 +36,12 @@ def get_account_contract_row_id(account_number, contract_id):
 def get_account_contract_list():
     c = sqlite3.connect(db_path)
     try:
-        meter = pd.read_sql_table(table_name='meter', con=c)
+        meter = pd.read_sql_query(
+            sql='select ROWID, * from meter',
+            con=c
+        )
     except pd.errors.DatabaseError:
-        meter = pd.DataFrame(columns=['account_number', 'contract_id'])
+        meter = pd.DataFrame(columns=['rowid', 'account_number', 'contract_id'])
     c.close()
     return meter
 
@@ -60,6 +63,30 @@ def get_usage_missing_dates(start_date, end_date, row_id):
     exist_dates = pd.DatetimeIndex(pd.to_datetime(exist_dates))
     missing_dates = all_dates.difference(exist_dates)
     return missing_dates
+
+
+def get_usage(start_date, end_date, row_id):
+    c = sqlite3.connect(db_path)
+    usage = None
+    try:
+        usage = pd.read_sql_query(
+            sql="select * from usage where date(printf('%04d-%02d-%02d', year, month, "
+                "day)) between date(?) and date(?) and meter_id = ?",
+            con=c,
+            params=[start_date, end_date, row_id]
+        )
+    except pd.errors.DatabaseError:
+        logging.warning(
+            "The table \"usage\" does not exist. Please start getting usage data of "
+            "your first meter, or extend the start and end date."
+        )
+    if (usage is not None) and usage.shape[0] == 0:
+        logging.warning(
+            "No usage data for the current meter, please extend the start and end "
+            "date."
+        )
+    c.close()
+    return usage
 
 
 def save_usage(usage, row_id):
