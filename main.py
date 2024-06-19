@@ -1,4 +1,3 @@
-import logging
 import socket
 import sys
 import webbrowser
@@ -7,14 +6,14 @@ from math import isnan
 
 import pywebio
 from flask import Flask
-from pyecharts.charts import Bar
+from pyecharts.charts import Bar, HeatMap
+from pyecharts.options import LabelOpts, VisualMapOpts
 from pywebio.platform.flask import webio_view
 
+from contact_energy_analysis import *
 from contact_energy_aws_lambda import ContactEnergyUsage
-from contact_energy_local_db import get_account_contract_row_id, \
-    get_usage_missing_dates, save_usage, get_account_contract_list
-from contact_energy_price import get_unit_price, default_unit_price, save_unit_price, \
-    get_total_price, all_plans
+from contact_energy_local_db import *
+from contact_energy_price import *
 
 app = Flask(__name__)
 logging.basicConfig(
@@ -358,21 +357,22 @@ def analyze():
         ),
     ])
     rows_id = form1['rows_id']
-    bar = Bar()
-    bar.add_xaxis(all_plans)
+
+    # Figure 1: bar
+    fig1 = Bar()
+    fig1.add_xaxis(all_plans)
     for row_id in rows_id:
         # total electricity price
         total_price = get_total_price(form1['start_date'], form1['end_date'], row_id)
         account_number = all_meters.loc[
             all_meters['rowid'] == row_id, 'account_number'][0]
         contract_id = all_meters.loc[all_meters['rowid'] == row_id, 'contract_id'][0]
-        bar.add_yaxis(
-            f"Account number: {account_number}\n"
-            f"Contract ID: {contract_id}",
+        fig1.add_yaxis(
+            f"Account number: {account_number}\nContract ID: {contract_id}",
             [total_price.get(plan) for plan in all_plans]
         )
     pywebio.output.put_markdown(
-        "# Total electricity cost (including GST)"
+        "# Total electricity cost (including GST)\n"
         "\n"
         "The program's calculation is slightly different to Contact Energy's "
         "bill, because they round both peak (or charged) usage and off-peak "
@@ -382,7 +382,33 @@ def analyze():
         "\n"
         "Unit: NZD"
     )
-    pywebio.output.put_html(bar.render_notebook())
+    pywebio.output.put_html(fig1.render_notebook())
+
+    # Figure 2: heatmap
+    pywebio.output.put_markdown(
+        "# Temporal electricity usage\n"
+        "\n"
+        "The average electricity usage for each weekday and intraday 1-hour interval.\n"
+        "\n"
+        "Unit: kWh"
+    )
+    for row_id in rows_id:
+        fig2 = HeatMap()
+        fig2.add_xaxis(hour_intervals)
+        pivot = weekday_hour_pivot(form1['start_date'], form1['end_date'], row_id)
+        account_number = all_meters.loc[
+            all_meters['rowid'] == row_id, 'account_number'][0]
+        contract_id = all_meters.loc[all_meters['rowid'] == row_id, 'contract_id'][0]
+        fig2.add_yaxis(
+            f"Account number: {account_number}\nContract ID: {contract_id}",
+            weekdays,
+            pivot.round(2).values.tolist(),
+            label_opts=LabelOpts(is_show=True, position="inside"),
+        )
+        fig2.set_global_opts(
+            visualmap_opts=VisualMapOpts(min_=0, max_=pivot['value'].max())
+        )
+        pywebio.output.put_html(fig2.render_notebook())
 
 
 app.add_url_rule(rule='/', endpoint='index', view_func=webio_view(index),
