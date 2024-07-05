@@ -4,8 +4,6 @@
 ![dependencies Python 3.12](https://shields.io/badge/dependencies-Python_3.12-blue)
 ![dependencies Powershell 5.1](https://shields.io/badge/dependencies-Powershell_5.1-cyan)
 
-![screenshot](./assets/Picture1.png)
-
 ## Install
 
 Create a Python virtual environment, then run the following command.
@@ -27,3 +25,9 @@ program on that page.
 
 To terminate this program, please close the tab in web browser, then close the command 
 line window.
+
+## Screenshots
+
+![screenshot](./assets/Snipaste_2024-06-22_00-23-10.png)
+
+![screenshot](./assets/Snipaste_2024-06-22_00-23-20.png)
