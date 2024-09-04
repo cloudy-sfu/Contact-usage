@@ -21,10 +21,8 @@ default_unit_price = {
     "basic_levy": 0.16,
     "basic_fixed": 90,
     "basic_price": 24.4,
-    "bach_price": 44.1,
-    "bach_levy": 0.16,
 }
-all_plans = ['weekend', 'night', 'broadband', 'charge', 'basic', 'bach']
+all_plans = ['weekend', 'night', 'broadband', 'charge', 'basic']
 
 
 def get_unit_price(row_id) -> dict:
@@ -96,8 +94,6 @@ def get_total_price(start_date, end_date, row_id):
         (usage['value'].sum() * (
                 unit_price['basic_price'] + unit_price['basic_levy']) +
          total_days * unit_price['basic_fixed'])
-    total_price_excl_gst['bach'] = usage['value'].sum() * (
-            unit_price['bach_price'] + unit_price['bach_levy'])
     # add GST, convert cents to dollars
     total_price = {k: round(float(v) * (1 + gst_rate) / 100, 2)
                    for k, v in total_price_excl_gst.items()}

@@ -54,9 +54,9 @@ def index():
         "the full control to their data.\n"
         "\n"
         "---\n"
-        "Update data from Contact Energy. [Enter](/get_data)\n"
+        "Update data from Contact Energy and view analysis. [Enter](/get_data)\n"
         "\n"
-        "Set (configure) unit price for your electricity meter. [Enter](/unit_price)\n"
+        "Set unit price for your electricity meter. [Enter](/unit_price)\n"
         "\n"
         "View analysis. [Enter](/analyze)\n"
     )
@@ -144,6 +144,52 @@ def get_data():
         "The program has finished updating electricity usage data."
     )
 
+    # Figure 1: bar
+    fig1 = Bar()
+    fig1.add_xaxis(all_plans)
+    # total electricity price
+    total_price = get_total_price(form3['start_date'], form3['end_date'], row_id)
+    account_number = form2['account_number']
+    contract_id = form3['contract_id']
+    fig1.add_yaxis(
+        f"Account number: {account_number}\nContract ID: {contract_id}",
+        [total_price.get(plan) for plan in all_plans]
+    )
+    pywebio.output.put_markdown(
+        "# Total electricity cost (including GST)\n"
+        "\n"
+        "The program's calculation is slightly different to Contact Energy's "
+        "bill, because they round both peak (or charged) usage and off-peak "
+        "(or free) usage to integer kWh. This program's calculation will be "
+        "more accurate. The difference should be smaller than 1kWh average "
+        "unit price of your plan (usually smaller than $1). \n"
+        "\n"
+        "Unit: NZD"
+    )
+    pywebio.output.put_html(fig1.render_notebook())
+
+    # Figure 2: heatmap
+    pywebio.output.put_markdown(
+        "# Temporal electricity usage\n"
+        "\n"
+        "The average electricity usage for each weekday and intraday 1-hour interval.\n"
+        "\n"
+        "Unit: kWh"
+    )
+    fig2 = HeatMap()
+    fig2.add_xaxis(hour_intervals)
+    pivot = weekday_hour_pivot(form3['start_date'], form3['end_date'], row_id)
+    fig2.add_yaxis(
+        f"Account number: {account_number}\nContract ID: {contract_id}",
+        weekdays,
+        pivot.round(2).values.tolist(),
+        label_opts=LabelOpts(is_show=True, position="inside"),
+    )
+    fig2.set_global_opts(
+        visualmap_opts=VisualMapOpts(min_=0, max_=pivot['value'].max())
+    )
+    pywebio.output.put_html(fig2.render_notebook())
+
 
 def unit_price():
     pywebio.output.put_link(name="Back", url="/")
@@ -172,7 +218,7 @@ def unit_price():
         "2024-06-17. You cannot leave some fields blank, so please copy the default "
         "value if you don't know and won't consider some plans.\n"
     )
-    form2 = pywebio.input.input_group("Unit price", [
+    form2 = pywebio.input.input_group("Unit price (without GST)", [
         pywebio.input.input(
             label="Good Weekends electricity rate",
             type=pywebio.input.FLOAT,
@@ -292,24 +338,6 @@ def unit_price():
             required=True,
             help_text="Unit: New Zealand cents per day",
         ),
-        pywebio.input.input(
-            label="Bach electricity rate",
-            type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["bach_price"]}',
-            value=existed_unit_price["bach_price"],
-            name="bach_price",
-            required=True,
-            help_text="Unit: New Zealand cents per kWh",
-        ),
-        pywebio.input.input(
-            label="Bach electricity authority levy",
-            type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["bach_levy"]}',
-            value=existed_unit_price["bach_levy"],
-            name="bach_levy",
-            required=True,
-            help_text="Unit: New Zealand cents per kWh",
-        ),
     ])
     save_unit_price(row_id, **form2)
     pywebio.output.put_text("Unit prices of the current meter are saved to the database.")
@@ -405,6 +433,7 @@ def analyze():
             pivot.round(2).values.tolist(),
             label_opts=LabelOpts(is_show=True, position="inside"),
         )
+
         fig2.set_global_opts(
             visualmap_opts=VisualMapOpts(min_=0, max_=pivot['value'].max())
         )
