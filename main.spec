@@ -5,7 +5,6 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[
-        ('header_csrf_token.json', '.'), ('header_login.json', '.'),
         # modify according to virtual environment path
         ('venv/Lib/site-packages/pyecharts', 'pyecharts'),
     ],
@@ -14,7 +13,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['post_pyinstaller.py'],
     noarchive=False,
     optimize=0,
 )
@@ -25,7 +24,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='main',
+    name='Contact Usage',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -36,7 +35,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    distpath='.',
 )
 coll = COLLECT(
     exe,
@@ -45,5 +43,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='main',
+    name='contact-usage-v0.5-win64',
 )

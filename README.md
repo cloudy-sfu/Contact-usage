@@ -12,6 +12,10 @@ Create a Python virtual environment, then run the following command.
 pip install -r requirements.txt
 ```
 
+**Developer**:
+
+Run `post_pyinstaller.py` after apply `pyinstaller`. 
+
 ## Usage
 
 Run the following command to start the program.
