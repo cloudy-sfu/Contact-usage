@@ -1,8 +1,6 @@
-import logging
 import sqlite3
-
 import pandas as pd
-from contact_energy_local_db import get_usage
+import numpy as np
 
 db_path = "contact_energy.db"
 gst_rate = 0.15
@@ -26,8 +24,10 @@ all_plans = ['weekend', 'night', 'broadband', 'charge', 'basic']
 
 
 def get_unit_price(row_id) -> dict:
-    price_template = pd.DataFrame(
-        data=list(default_unit_price.keys()), columns=['name'])
+    # although constants, intended not expose to outer scope
+    # believe compiler or runtime can optimize
+    plans_charged_items = \
+        pd.DataFrame(data=list(default_unit_price.keys()), columns=['name'])
     c = sqlite3.connect(db_path)
     try:
         price = pd.read_sql_query(
@@ -35,13 +35,11 @@ def get_unit_price(row_id) -> dict:
             con=c,
             params=[row_id]
         )
-        price = pd.merge(price_template, price, on='name', how='left')
+        price = pd.merge(plans_charged_items, price, on='name', how='left')
     except pd.errors.DatabaseError:
-        price = price_template.copy()
-        price['price'] = pd.NA
+        price = plans_charged_items.copy()
+        price['price'] = np.nan
     c.close()
-    if price['price'].isna().sum() > 0:
-        logging.warning("The unit price for the current account is not configured.")
     # Because the template is left joined, it's guaranteed there is no missing keys.
     price = dict(zip(price['name'], price['price']))
     return price
@@ -62,12 +60,18 @@ def save_unit_price(row_id, **kwargs):
     c.close()
 
 
-def get_total_price(start_date, end_date, row_id):
-    usage = get_usage(start_date, end_date, row_id)
-    if usage is None:
-        return {p: 0 for p in all_plans}
-    unit_price = get_unit_price(row_id)
-    # calc total price
+def get_total_price(start_date, end_date, usage, unit_price):
+    """
+    Calculate total electricity price for all Contact Energy plans in a specific period
+    :param start_date: Start date of the period (include this date)
+    :param end_date: End date of the period (include this date)
+    :param usage: Hourly electricity usage table, which includes columns of
+        ['year', 'month', 'day', 'hour', 'value']
+        where 'value' is electricity usage in the corresponding hour in unit of kWh
+    :param unit_price: Unit price dictionary, where keys are fixed and the same as
+        variable "default_unit_price"; values are allowed to be "pd.NA"
+    :return:
+    """
     total_price_excl_gst = {}
     total_days = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days + 1
     usage['date'] = pd.to_datetime(usage[['year', 'month', 'day']])

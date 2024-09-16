@@ -2,7 +2,6 @@ import socket
 import sys
 import webbrowser
 from datetime import datetime, timedelta
-from math import isnan
 
 import pywebio
 from flask import Flask
@@ -44,26 +43,22 @@ def index():
         "# Contact electricity usage\n"
         "Calculate electricity usage of Contact Energy account\n"
         "\n"
-        "If finding any issue, "
-        "please read more detailed information in the terminal. To raise the issue to "
-        "the author at github, please attach these information.\n"
+        "If finding any issue, please read more detailed information in the terminal. "
+        "To raise the issue to the author at github, please attach these information.\n"
         "\n"
         "To use this program, **the user agrees** this program to store electricity "
         "usage data in a local database from their Contact Energy account. The data will "
         "not be sent to the program's author or any other online services. The user has "
         "the full control to their data.\n"
         "\n"
-        "---\n"
-        "Update data from Contact Energy and view analysis. [Enter](/get_data)\n"
+        "**Shortcuts**:\n"
         "\n"
         "Set unit price for your electricity meter. [Enter](/unit_price)\n"
         "\n"
-        "View analysis. [Enter](/analyze)\n"
+        "View analysis only. [Enter](/analyze)\n"
+        "\n"
+        "---\n"
     )
-
-
-def get_data():
-    pywebio.output.put_link(name="Back", url="/")
     form1 = pywebio.input.input_group('Login', [
         pywebio.input.input(
             label="Username",
@@ -126,7 +121,11 @@ def get_data():
             validate=validate_end_date,
         ),
     ])
+
+    # locate the meter
     row_id = get_account_contract_row_id(form2['account_number'], form3['contract_id'])
+
+    # write usage to the database (update usage)
     missing_dates = get_usage_missing_dates(
         form3['start_date'], form3['end_date'], row_id)
     pywebio.output.put_text(
@@ -144,17 +143,174 @@ def get_data():
         "The program has finished updating electricity usage data."
     )
 
+    # read usage from the database (after updated)
+    usage = get_usage(form3['start_date'], form3['end_date'], row_id)
+    unit_price_ = get_unit_price(row_id)
+
+    # attempt to get updates user-friendly
+    if any(np.isnan(v) for v in unit_price_.values()):
+        pywebio.output.put_text("The unit price of this meter is not complete. Please "
+                                "set or update with the following form.")
+        all_meters = get_account_contract_list()
+        all_meters_options = [
+            (
+            f"Account number: {row['account_number']}, Contract ID: {row['contract_id']}",
+            row['rowid']) for _, row in all_meters.iterrows()
+        ]
+        form4 = pywebio.input.checkbox(
+            label="Shortcuts",
+            type=pywebio.input.CHECKBOX,
+            options=[
+                ("Copy from another meter", "copy_from_another_meter"),
+            ],
+        )
+        if 'copy_from_another_meter' in form4:
+            form5 = pywebio.input.input_group("Select the template meter", [
+                pywebio.input.select(
+                    label="Meter",
+                    options=all_meters_options,
+                    name="row_id",
+                    required=True,
+                ),
+            ])
+            reference_row_id = form5['row_id']
+            reference_prices = get_unit_price(reference_row_id)
+            save_unit_price(row_id, **reference_prices)
+        pywebio.output.put_markdown(
+            "---\n"
+            "Default price is for the non-rural area low user in Auckland, collected on "
+            "2024-06-17. All fields are required, so please keep the default "
+            "value if you don't intend to modify or use these electricity plans.\n"
+        )
+        # No guarantee that data in the database is complete, so even this function autofill
+        # the existed unit price, default unit price is still needed.
+        unit_price_ = {k: None if np.isnan(v) else v for k, v in unit_price_.items()}
+        form6 = pywebio.input.input_group("Unit price (without GST)", [
+            pywebio.input.input(
+                label="Good Weekends electricity rate",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["weekend_price"] or default_unit_price["weekend_price"],
+                name="weekend_price",
+                required=True,
+                help_text="Saturday and Sunday 9:00-17:00 is free. "
+                          "Unit: New Zealand cents per kWh",
+            ),
+            pywebio.input.input(
+                label="Good Weekends fixed daily fee",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["weekend_fixed"] or default_unit_price["weekend_fixed"],
+                name="weekend_fixed",
+                required=True,
+                help_text="Unit: New Zealand cents per day",
+            ),
+            pywebio.input.input(
+                label="Good Nights electricity rate",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["night_price"] or default_unit_price["night_price"],
+                name="night_price",
+                required=True,
+                help_text="Everyday 21:00-0:00 is free. "
+                          "Unit: New Zealand cents per kWh",
+            ),
+            pywebio.input.input(
+                label="Good Nights fixed daily fee",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["night_fixed"] or default_unit_price["night_fixed"],
+                name="night_fixed",
+                required=True,
+                help_text="Unit: New Zealand cents per day",
+            ),
+            pywebio.input.input(
+                label="Broadband electricity rate",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["broadband_price"] or
+                      default_unit_price["broadband_price"],
+                name="broadband_price",
+                required=True,
+                help_text="Unit: New Zealand cents per kWh",
+            ),
+            pywebio.input.input(
+                label="Broadband electricity authority levy",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["broadband_levy"] or
+                      default_unit_price["broadband_levy"],
+                name="broadband_levy",
+                required=True,
+                help_text="Unit: New Zealand cents per kWh",
+            ),
+            pywebio.input.input(
+                label="Broadband fixed daily fee",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["broadband_fixed"] or
+                      default_unit_price["broadband_fixed"],
+                name="broadband_fixed",
+                required=True,
+                help_text="Unit: New Zealand cents per day",
+            ),
+            pywebio.input.input(
+                label="Good Charge electricity rate (daytime 7:00-21:00)",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["charge_day_price"] or
+                      default_unit_price["charge_day_price"],
+                name="charge_day_price",
+                required=True,
+                help_text="Unit: New Zealand cents per kWh",
+            ),
+            pywebio.input.input(
+                label="Good Charge electricity rate (night 21:00-7:00)",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["charge_night_price"] or
+                      default_unit_price["charge_night_price"],
+                name="charge_night_price",
+                required=True,
+                help_text="Unit: New Zealand cents per kWh",
+            ),
+            pywebio.input.input(
+                label="Good Charge fixed daily fee",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["charge_fixed"] or default_unit_price["charge_fixed"],
+                name="charge_fixed",
+                required=True,
+                help_text="Unit: New Zealand cents per day",
+            ),
+            pywebio.input.input(
+                label="Basic electricity rate",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["basic_price"] or default_unit_price["basic_price"],
+                name="basic_price",
+                required=True,
+                help_text="Unit: New Zealand cents per kWh",
+            ),
+            pywebio.input.input(
+                label="Basic electricity authority levy",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["basic_levy"] or default_unit_price["basic_levy"],
+                name="basic_levy",
+                required=True,
+                help_text="Unit: New Zealand cents per kWh",
+            ),
+            pywebio.input.input(
+                label="Basic fixed daily fee",
+                type=pywebio.input.FLOAT,
+                value=unit_price_["basic_fixed"] or default_unit_price["basic_fixed"],
+                name="basic_fixed",
+                required=True,
+                help_text="Unit: New Zealand cents per day",
+            ),
+        ])
+        save_unit_price(row_id, **form6)
+        unit_price_ = get_unit_price(row_id)
+
+    # total electricity price
+    total_price = get_total_price(
+        form3['start_date'], form3['end_date'], usage, unit_price_)
+
     # Figure 1: bar
     fig1 = Bar()
     fig1.add_xaxis(all_plans)
-    # total electricity price
-    total_price = get_total_price(form3['start_date'], form3['end_date'], row_id)
-    account_number = form2['account_number']
-    contract_id = form3['contract_id']
-    fig1.add_yaxis(
-        f"Account number: {account_number}\nContract ID: {contract_id}",
-        [total_price.get(plan) for plan in all_plans]
-    )
+    account_contract_str = (f"Account number: {form2['account_number']}\n"
+                            f"Contract ID: {form3['contract_id']}")
+    fig1.add_yaxis(account_contract_str, [total_price.get(plan) for plan in all_plans])
     pywebio.output.put_markdown(
         "# Total electricity cost (including GST)\n"
         "\n"
@@ -180,14 +336,10 @@ def get_data():
     fig2.add_xaxis(hour_intervals)
     pivot = weekday_hour_pivot(form3['start_date'], form3['end_date'], row_id)
     fig2.add_yaxis(
-        f"Account number: {account_number}\nContract ID: {contract_id}",
-        weekdays,
-        pivot.round(2).values.tolist(),
+        account_contract_str, weekdays, pivot.round(2).values.tolist(),
         label_opts=LabelOpts(is_show=True, position="inside"),
     )
-    fig2.set_global_opts(
-        visualmap_opts=VisualMapOpts(min_=0, max_=pivot['value'].max())
-    )
+    fig2.set_global_opts(visualmap_opts=VisualMapOpts(min_=0, max_=pivot['value'].max()))
     pywebio.output.put_html(fig2.render_notebook())
 
 
@@ -209,21 +361,43 @@ def unit_price():
     ])
     row_id = form1['row_id']
 
-    existed_unit_price = get_unit_price(row_id)
-    existed_unit_price = {k: None if isnan(v) else v
-                          for k, v in existed_unit_price.items()}
+    form3 = pywebio.input.checkbox(
+        label="Shortcuts",
+        type=pywebio.input.CHECKBOX,
+        options=[
+            ("Copy from another meter", "copy_from_another_meter"),
+        ],
+    )
+    if 'copy_from_another_meter' in form3:
+        form4 = pywebio.input.input_group("Select the template meter", [
+            pywebio.input.select(
+                label="Meter",
+                options=all_meters_options,
+                name="row_id",
+                required=True,
+            ),
+        ])
+        reference_row_id = form4['row_id']
+        reference_prices = get_unit_price(reference_row_id)
+        save_unit_price(row_id, **reference_prices)
+
     pywebio.output.put_markdown(
         "---\n"
         "Default price is for the non-rural area low user in Auckland, collected on "
-        "2024-06-17. You cannot leave some fields blank, so please copy the default "
-        "value if you don't know and won't consider some plans.\n"
+        "2024-06-17. All fields are required, so please keep the default "
+        "value if you don't intend to modify or use these electricity plans.\n"
     )
+    # No guarantee that data in the database is complete, so even this function autofill
+    # the existed unit price, default unit price is still needed.
+    existed_unit_price = get_unit_price(row_id)
+    existed_unit_price = {k: None if np.isnan(v) else v
+                          for k, v in existed_unit_price.items()}
     form2 = pywebio.input.input_group("Unit price (without GST)", [
         pywebio.input.input(
             label="Good Weekends electricity rate",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["weekend_price"]}',
-            value=existed_unit_price["weekend_price"],
+            value=existed_unit_price["weekend_price"] or
+                  default_unit_price["weekend_price"],
             name="weekend_price",
             required=True,
             help_text="Saturday and Sunday 9:00-17:00 is free. "
@@ -232,8 +406,8 @@ def unit_price():
         pywebio.input.input(
             label="Good Weekends fixed daily fee",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["weekend_fixed"]}',
-            value=existed_unit_price["weekend_fixed"],
+            value=existed_unit_price["weekend_fixed"] or
+                  default_unit_price["weekend_fixed"],
             name="weekend_fixed",
             required=True,
             help_text="Unit: New Zealand cents per day",
@@ -241,8 +415,8 @@ def unit_price():
         pywebio.input.input(
             label="Good Nights electricity rate",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["night_price"]}',
-            value=existed_unit_price["night_price"],
+            value=existed_unit_price["night_price"] or
+                  default_unit_price["night_price"],
             name="night_price",
             required=True,
             help_text="Everyday 21:00-0:00 is free. "
@@ -251,8 +425,8 @@ def unit_price():
         pywebio.input.input(
             label="Good Nights fixed daily fee",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["night_fixed"]}',
-            value=existed_unit_price["night_fixed"],
+            value=existed_unit_price["night_fixed"] or
+                  default_unit_price["night_fixed"],
             name="night_fixed",
             required=True,
             help_text="Unit: New Zealand cents per day",
@@ -260,8 +434,8 @@ def unit_price():
         pywebio.input.input(
             label="Broadband electricity rate",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["broadband_price"]}',
-            value=existed_unit_price["broadband_price"],
+            value=existed_unit_price["broadband_price"] or
+                  default_unit_price["broadband_price"],
             name="broadband_price",
             required=True,
             help_text="Unit: New Zealand cents per kWh",
@@ -269,8 +443,8 @@ def unit_price():
         pywebio.input.input(
             label="Broadband electricity authority levy",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["broadband_levy"]}',
-            value=existed_unit_price["broadband_levy"],
+            value=existed_unit_price["broadband_levy"] or
+                  default_unit_price["broadband_levy"],
             name="broadband_levy",
             required=True,
             help_text="Unit: New Zealand cents per kWh",
@@ -278,8 +452,8 @@ def unit_price():
         pywebio.input.input(
             label="Broadband fixed daily fee",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["broadband_fixed"]}',
-            value=existed_unit_price["broadband_fixed"],
+            value=existed_unit_price["broadband_fixed"] or
+                  default_unit_price["broadband_fixed"],
             name="broadband_fixed",
             required=True,
             help_text="Unit: New Zealand cents per day",
@@ -287,8 +461,8 @@ def unit_price():
         pywebio.input.input(
             label="Good Charge electricity rate (daytime 7:00-21:00)",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["charge_day_price"]}',
-            value=existed_unit_price["charge_day_price"],
+            value=existed_unit_price["charge_day_price"] or
+                  default_unit_price["charge_day_price"],
             name="charge_day_price",
             required=True,
             help_text="Unit: New Zealand cents per kWh",
@@ -296,8 +470,8 @@ def unit_price():
         pywebio.input.input(
             label="Good Charge electricity rate (night 21:00-7:00)",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["charge_night_price"]}',
-            value=existed_unit_price["charge_night_price"],
+            value=existed_unit_price["charge_night_price"] or
+                  default_unit_price["charge_night_price"],
             name="charge_night_price",
             required=True,
             help_text="Unit: New Zealand cents per kWh",
@@ -305,8 +479,8 @@ def unit_price():
         pywebio.input.input(
             label="Good Charge fixed daily fee",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["charge_fixed"]}',
-            value=existed_unit_price["charge_fixed"],
+            value=existed_unit_price["charge_fixed"] or
+                  default_unit_price["charge_fixed"],
             name="charge_fixed",
             required=True,
             help_text="Unit: New Zealand cents per day",
@@ -314,8 +488,7 @@ def unit_price():
         pywebio.input.input(
             label="Basic electricity rate",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["basic_price"]}',
-            value=existed_unit_price["basic_price"],
+            value=existed_unit_price["basic_price"] or default_unit_price["basic_price"],
             name="basic_price",
             required=True,
             help_text="Unit: New Zealand cents per kWh",
@@ -323,8 +496,7 @@ def unit_price():
         pywebio.input.input(
             label="Basic electricity authority levy",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["basic_levy"]}',
-            value=existed_unit_price["basic_levy"],
+            value=existed_unit_price["basic_levy"] or default_unit_price["basic_levy"],
             name="basic_levy",
             required=True,
             help_text="Unit: New Zealand cents per kWh",
@@ -332,8 +504,7 @@ def unit_price():
         pywebio.input.input(
             label="Basic fixed daily fee",
             type=pywebio.input.FLOAT,
-            placeholder=f'Default: {default_unit_price["basic_fixed"]}',
-            value=existed_unit_price["basic_fixed"],
+            value=existed_unit_price["basic_fixed"] or default_unit_price["basic_fixed"],
             name="basic_fixed",
             required=True,
             help_text="Unit: New Zealand cents per day",
@@ -391,7 +562,10 @@ def analyze():
     fig1.add_xaxis(all_plans)
     for row_id in rows_id:
         # total electricity price
-        total_price = get_total_price(form1['start_date'], form1['end_date'], row_id)
+        usage = get_usage(form1['start_date'], form1['end_date'], row_id)
+        unit_price_ = get_unit_price(row_id)
+        total_price = get_total_price(
+            form1['start_date'], form1['end_date'], usage, unit_price_)
         account_number = all_meters.loc[
             all_meters['rowid'] == row_id, 'account_number'][0]
         contract_id = all_meters.loc[all_meters['rowid'] == row_id, 'contract_id'][0]
@@ -441,8 +615,6 @@ def analyze():
 
 
 app.add_url_rule(rule='/', endpoint='index', view_func=webio_view(index),
-                 methods=['GET', 'POST', 'OPTIONS'])
-app.add_url_rule(rule='/get_data', endpoint='get_data', view_func=webio_view(get_data),
                  methods=['GET', 'POST', 'OPTIONS'])
 app.add_url_rule(rule='/unit_price', endpoint='unit_price',
                  view_func=webio_view(unit_price), methods=['GET', 'POST', 'OPTIONS'])
