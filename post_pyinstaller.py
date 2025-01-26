@@ -1,7 +1,6 @@
 import ast
-import shutil
 import os
-
+import shutil
 
 # %% Get dist root directory name from *.spec
 def parse_ast_tree(tree):
@@ -23,6 +22,7 @@ analysis_data = [
     ('header_csrf_token.json', '.'),
     ('header_login.json', '.'),
     ('request_usage.ps1', '.'),
+    ('price.csv', '.')
 ]
 for src, raw_dst in analysis_data:
     dst = os.path.join(f"dist/{dist_dir_name}", raw_dst)
