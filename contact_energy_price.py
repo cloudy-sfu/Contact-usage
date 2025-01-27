@@ -1,83 +1,61 @@
 import sqlite3
-
 import pandas as pd
+import numpy as np
 
 db_path = "contact_energy.db"
 gst_rate = 0.15
+# low user rate: 2024-06-17 before GST, NZ cents per kWh
+default_unit_price = {
+    "weekend_price": 23.4,  # except Sat Sun 9:00-17:00
+    "weekend_fixed": 90,
+    "night_price": 30.2,  # except 21:00-0:00
+    "night_fixed": 90,
+    "broadband_price": 24.4,
+    "broadband_fixed": 90,
+    "broadband_levy": 0.16,
+    "charge_day_price": 28.3,  # 7:00-21:00
+    "charge_night_price": 14.1,
+    "charge_fixed": 90,
+    "basic_levy": 0.16,
+    "basic_fixed": 90,
+    "basic_price": 24.4,
+}
 all_plans = ['weekend', 'night', 'broadband', 'charge', 'basic']
-plans_default_items = pd.DataFrame({'name': [
-    'weekend_price', 'weekend_fixed', 'night_price', 'night_fixed', 'broadband_price',
-    'broadband_fixed', 'broadband_levy', 'charge_day_price', 'charge_night_price',
-    'charge_fixed', 'basic_levy', 'basic_fixed', 'basic_price'
-]})
 
 
-def upgrade_price_table_1():
-    c = sqlite3.connect(db_path)
-    try:
-        r = c.cursor()
-        r.execute(f"PRAGMA table_info(price);")
-        columns = r.fetchall()
-    except sqlite3.OperationalError:
-        columns = []
-    if 'announced_date' not in columns:
-        price = pd.read_csv("price.csv")
-        price.to_sql(name='price', con=c, if_exists='replace', index=False)
-    c.close()
-
-
-def get_unit_price(announced_date, is_low_user) -> dict:
+def get_unit_price(row_id) -> dict:
     # although constants, intended not expose to outer scope
     # believe compiler or runtime can optimize
+    plans_charged_items = \
+        pd.DataFrame(data=list(default_unit_price.keys()), columns=['name'])
     c = sqlite3.connect(db_path)
-    price = pd.read_sql_query(
-        sql="select name, price from price where announced_date = ? and "
-            "is_low_user = ?",
-        con=c,
-        params=[announced_date, is_low_user]
-    )
-    price = pd.merge(plans_default_items, price, on='name', how='left')
+    try:
+        price = pd.read_sql_query(
+            sql="select name, price from price where meter_id = ?",
+            con=c,
+            params=[row_id]
+        )
+        price = pd.merge(plans_charged_items, price, on='name', how='left')
+    except pd.errors.DatabaseError:
+        price = plans_charged_items.copy()
+        price['price'] = np.nan
     c.close()
     # Because the template is left joined, it's guaranteed there is no missing keys.
     price = dict(zip(price['name'], price['price']))
     return price
 
 
-def exists_unit_price(announced_date, is_low_user) -> bool:
-    c = sqlite3.connect(db_path)
-    price = pd.read_sql_query(
-        sql="select count(*) from price where announced_date = ? and "
-            "is_low_user = ?",
-        con=c,
-        params=[announced_date, is_low_user]
-    )
-    c.close()
-    return price.iloc[0, 0] > 0
-
-
-def list_announced_dates():
-    c = sqlite3.connect(db_path)
-    price = pd.read_sql_query(
-        sql="select distinct(announced_date) from price",
-        con=c,
-    )
-    c.close()
-    return price['announced_date'].tolist()
-
-
-def save_unit_price(announced_date, is_low_user, **kwargs):
+def save_unit_price(row_id, **kwargs):
     c = sqlite3.connect(db_path)
     exist_table_price = pd.read_sql_query(
         sql="SELECT name FROM sqlite_master WHERE type='table' AND name='price'",
         con=c,
     )
     if exist_table_price.shape[0] > 0:
-        c.execute("delete from price where announced_date = ? and "
-            "is_low_user = ?", (announced_date, is_low_user))
+        c.execute("delete from price where meter_id = ?", (row_id,))
         c.commit()
     price = pd.DataFrame(list(kwargs.items()), columns=['name', 'price'])
-    price.insert(loc=0, column='announced_date', value=announced_date)
-    price.insert(loc=1, column='is_low_user', value=is_low_user)
+    price.insert(loc=0, column='meter_id', value=row_id)
     price.to_sql(name='price', con=c, if_exists='append', index=False)
     c.close()
 
