@@ -46,7 +46,7 @@ def get_account_contract_list():
     return meter
 
 
-def get_usage_missing_dates(start_date, end_date, row_id):
+def get_missing_dates_in_usage(start_date, end_date, row_id):
     all_dates = pd.date_range(start=start_date, end=end_date, freq='1d')
     c = sqlite3.connect(db_path)
     try:

@@ -3,17 +3,21 @@
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=[
         # modify according to virtual environment path
-        ('venv/Lib/site-packages/pyecharts', 'pyecharts'),
+        ('.venv/Lib/site-packages/pyecharts', 'pyecharts'),
     ],
-    datas=[],
+    datas=[
+        ('contact_energy/header_csrf_token.json', 'contact_energy'),
+        ('contact_energy/header_login.json', 'contact_energy'),
+        ('contact_energy/request_usage.ps1', 'contact_energy'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['post_pyinstaller.py'],
+    excludes=[],
     noarchive=False,
     optimize=0,
 )
@@ -35,6 +39,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    contents_directory='.',
 )
 coll = COLLECT(
     exe,
@@ -43,5 +48,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='contact-usage-v0.5-win64',
+    name='contact-usage-v0.6-win64',
 )

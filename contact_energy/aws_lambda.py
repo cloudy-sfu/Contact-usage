@@ -7,13 +7,13 @@ from random import uniform
 
 from requests import Session
 
-with open("header_login.json") as f:
+with open("contact_energy/header_login.json") as f:
     header_login = json.load(f)
-with open("header_csrf_token.json") as f:
+with open("contact_energy/header_csrf_token.json") as f:
     # x-api-key is defined by
     # https://myaccount.contact.co.nz/main.2049c28d6664d8a2ecc3.esm.js
     header_csrf_token = json.load(f)
-with open("request_usage.ps1") as f:
+with open("contact_energy/request_usage.ps1") as f:
     req_usage = f.read()
 sess = Session()
 sess.trust_env = False
