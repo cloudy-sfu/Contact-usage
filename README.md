@@ -1,5 +1,5 @@
 # Contact usage
- Calculate electricity usage of Contact Energy account
+ Compare electricity prices between Contact Energy electricity plans
 
 ![dependencies Python 3.12](https://shields.io/badge/dependencies-Python_3.12-blue)
 ![dependencies Powershell 5.1](https://shields.io/badge/dependencies-Powershell_5.1-cyan)
@@ -8,7 +8,9 @@
 
 **Users**:
 
-Download the latest release.
+Download the latest release and unzip.
+
+To migrate data from a previous version, move `contact_energy.db` from previous version program's folder to the current version program's folder.
 
 **Developers**:
 
@@ -28,7 +30,6 @@ To compile the program, run the following command.
 
 ```
 pyinstaller main.spec
-python post_pyinstaller.py
 ```
 
 Find the compiled program in `dist/`.
@@ -41,7 +42,9 @@ The program will open a new tab in your system default web browser. Interact wit
 
 To terminate this program, please close the tab in web browser, then close the command line window.
 
-When the unit prices change, get the new price by visiting https://journey.contact.co.nz/residential/find-a-plan You should pretend to join Contact Energy as a new customer and view the quotes, but don't need to confirm and pay.
+When the unit prices change, the price of existed contract will not change, unless you get notified by Contact Energy. 
+
+The correct way is to compare the contract (old) price of your current plan and new price of other plans from https://journey.contact.co.nz/residential/find-a-plan 
 
 <details>
     <summary>Screenshots</summary>
