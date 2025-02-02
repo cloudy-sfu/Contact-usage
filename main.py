@@ -149,22 +149,18 @@ def validate_start_date(date_str):
 
 def index():
     pywebio.output.put_markdown(
-        "# Contact electricity usage\n"
-        "Calculate electricity usage of Contact Energy account\n"
+        "# Contact usage\n"
+        "Compare electricity prices between Contact Energy electricity plans\n"
         "\n"
-        "If finding any issue, please read more detailed information in the terminal. "
-        "To raise the issue to the author at github, please attach these information.\n"
-        "\n"
-        "To use this program, **the user agrees** this program to store electricity "
-        "usage data in a local database from their Contact Energy account. The data will "
-        "not be sent to the program's author or any other online services. The user has "
-        "the full control to their data.\n"
+        "Electricity usage data from Contact Energy account will be stored in a local "
+        "database. It will not be sent to the program's author or any other address "
+        "on the Internet.\n"
         "\n"
         "**Shortcuts**:\n"
         "\n"
-        "Set unit price for your electricity meter. [Enter](/unit_price)\n"
+        "Set unit price for specific meter: [Enter](/unit_price)\n"
         "\n"
-        "View analysis only. [Enter](/analyze)\n"
+        "View analysis only: [Enter](/analyze)\n"
         "\n"
         "---\n"
     )
@@ -229,13 +225,6 @@ def index():
                       "in the period.",
             validate=validate_end_date,
         ),
-        pywebio.input.checkbox(
-            name="copy_from_another_meter",
-            type=pywebio.input.CHECKBOX,
-            options=[
-                ("Copy from another meter", "yes"),
-            ],
-        ),
     ])
 
     # locate the meter
@@ -262,34 +251,6 @@ def index():
     # read usage from the database (after updated)
     usage = get_usage(form3['start_date'], form3['end_date'], row_id)
     unit_price_ = get_unit_price(row_id)
-
-    # attempt to get updates user-friendly
-    if any(np.isnan(v) for v in unit_price_.values()):
-        pywebio.output.put_text("The unit price of this meter is not complete. Please "
-                                "set or update with the following form.")
-        all_meters = get_account_contract_list()
-        all_meters_options = [
-            (
-            f"Account number: {row['account_number']}, Contract ID: {row['contract_id']}",
-            row['rowid']) for _, row in all_meters.iterrows()
-        ]
-        if 'yes' in form3['copy_from_another_meter']:
-            form5 = pywebio.input.input_group("Select the template meter", [
-                pywebio.input.select(
-                    label="Meter",
-                    options=all_meters_options,
-                    name="row_id",
-                    required=True,
-                ),
-            ])
-            reference_row_id = form5['row_id']
-            reference_prices = get_unit_price(reference_row_id)
-            save_unit_price(row_id, **reference_prices)
-
-        unit_price_ = {k: None if np.isnan(v) else v for k, v in unit_price_.items()}
-        form6 = get_unit_price_form(unit_price_)
-        save_unit_price(row_id, **form6)
-        unit_price_ = get_unit_price(row_id)
 
     # analyze electricity price
     draw_charts([{

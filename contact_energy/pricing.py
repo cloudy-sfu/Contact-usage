@@ -7,6 +7,21 @@ gst_rate = 0.15
 
 
 def get_unit_price(row_id) -> dict:
+    parameters = [
+        'weekend_price',
+        'weekend_fixed',
+        'night_price',
+        'night_fixed',
+        'broadband_price',
+        'broadband_levy',
+        'broadband_fixed',
+        'charge_day_price',
+        'charge_night_price',
+        'charge_fixed',
+        'basic_price',
+        'basic_levy',
+        'basic_fixed',
+    ]
     c = sqlite3.connect(db_path)
     try:
         price = pd.read_sql_query(
@@ -14,9 +29,11 @@ def get_unit_price(row_id) -> dict:
             con=c,
             params=[row_id]
         )
-        price = price.set_index('name').to_dict()['price']
+        price = price.set_index('name')
+        price = price[~price.index.duplicated(keep='first')]
+        price = price.reindex(parameters).to_dict()['price']
     except pd.errors.DatabaseError:
-        price = {}
+        price = {p: np.nan for p in parameters}
     c.close()
     return price
 

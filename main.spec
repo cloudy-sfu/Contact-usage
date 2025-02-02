@@ -48,5 +48,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='contact-usage-v0.6-win64',
+    name='contact-usage-v0.7-win64',
 )
